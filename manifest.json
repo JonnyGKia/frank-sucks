@@ -5,6 +5,6 @@
   "start_url": "/frank-sucks/",
   "scope": "/frank-sucks/",
   "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#000000"
+  "background_color": "#1b1206",
+  "theme_color": "#1b1206"
 }
