@@ -1,0 +1,10 @@
+{
+  "id": "/frank-sucks/",
+  "name": "Frank Sucks",
+  "short_name": "Frank Sucks",
+  "start_url": "/frank-sucks/",
+  "scope": "/frank-sucks/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000"
+}
