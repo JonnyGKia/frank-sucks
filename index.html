@@ -32,15 +32,27 @@
   <div class="err" id="err"></div>
 </form>
 <script>
-var DATA = null;   // the encrypted page lives in page.json and is always fetched fresh, so updates show up right away
+var DATA = null;   // the encrypted page is always fetched fresh, so updates show up right away
 var KEY = 'frank-pw';
 function bytes(b) { var s = atob(b), u = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
+// page.bin = "FRK1" + salt(16) + iv(12) + AES-GCM ciphertext of the gzipped page. Browsers that can't unzip get page.json instead.
+var ZIP = typeof DecompressionStream === 'function';
+async function load() {
+  var res = await fetch((ZIP ? 'page.bin' : 'page.json') + '?t=' + Date.now(), { cache: 'no-store' });
+  if (!res.ok) throw new Error('load');
+  if (!ZIP) { var j = await res.json(); return { salt: bytes(j.salt), iv: bytes(j.iv), ct: bytes(j.ct) }; }
+  var u = new Uint8Array(await res.arrayBuffer());
+  if (String.fromCharCode(u[0], u[1], u[2], u[3]) !== 'FRK1') throw new Error('load');
+  return { salt: u.slice(4, 20), iv: u.slice(20, 32), ct: u.slice(32) };
+}
 async function unlock(pw) {
-  if (!DATA) { var res = await fetch('page.json?t=' + Date.now(), { cache: 'no-store' }); if (!res.ok) throw new Error('load'); DATA = await res.json(); }
+  if (!DATA) DATA = await load();
   var base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
-  var key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: bytes(DATA.salt), iterations: 600000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
-  var plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes(DATA.iv) }, key, bytes(DATA.ct));
-  return new TextDecoder().decode(plain);
+  var key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: DATA.salt, iterations: 600000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  var plain;
+  try { plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: DATA.iv }, key, DATA.ct); } catch (e) { throw new Error('pw'); }
+  if (!ZIP) return new TextDecoder().decode(plain);
+  return await new Response(new Blob([plain]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
 }
 function show(html) { document.open(); document.write(html); document.close(); }
 async function tryPw(pw, silent) {
@@ -51,7 +63,8 @@ async function tryPw(pw, silent) {
     show(html);
   } catch (e) {
     btn.disabled = false; btn.textContent = 'ENTER';
-    if (!silent) err.textContent = 'Wrong password';
+    if (e && e.message !== 'pw') DATA = null;              // a failed download gets retried next time
+    if (!silent) err.textContent = e && e.message === 'pw' ? 'Wrong password' : 'Couldn\'t load. Check your connection and try again.';
   }
 }
 document.getElementById('f').addEventListener('submit', function (e) {
